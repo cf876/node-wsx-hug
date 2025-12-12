@@ -8,18 +8,43 @@ const crypto = require('crypto');
 const { Buffer } = require('buffer');
 const { exec, execSync } = require('child_process');
 const { WebSocket, createWebSocketStream } = require('ws');
-// 1. 原UUID改为uuid
 const uuid = process.env.uuid || '5efabea4-f6d4-91fd-b8f0-17e004c89c60'; // 运行哪吒v1,在不同的平台需要改uuid,否则会被覆盖
 const NEZHA_SERVER = process.env.NEZHA_SERVER || '';       // 哪吒v1填写形式：nz.abc.com:8008   哪吒v0填写形式：nz.abc.com
 const NEZHA_PORT = process.env.NEZHA_PORT || '';           // 哪吒v1没有此变量，v0的agent端口为{443,8443,2096,2087,2083,2053}其中之一时开启tls
 const NEZHA_KEY = process.env.NEZHA_KEY || '';             // v1的NZ_CLIENT_SECRET或v0的agent端口                
 const DOMAIN = process.env.DOMAIN || '1234.abc.com';       // 填写项目域名或已反代的域名，不带前缀，建议填已反代的域名
 const AUTO_ACCESS = process.env.AUTO_ACCESS || true;       // 是否开启自动访问保活,false为关闭,true为开启,需同时填写DOMAIN变量
-const WSPATH = process.env.WSPATH || uuid.slice(0, 8);     // 2. 引用修改后的uuid
-const SUB_PATH = process.env.SUB_PATH || 'sub';            // 获取节点的订阅路径
+const WSPATH = process.env.WSPATH || uuid.slice(0, 8);
+const SUB_PATH = process.env.SUB_PATH || 'sub/${uuid}';            // 获取节点的订阅路径
 const PORT = process.env.PORT || 7860;                     // http和ws服务端口
 const subtxt = `${process.env.HOME}/agsbx/jh.txt`;
 const NAME = process.env.NAME || os.hostname();
+
+
+function ensureModule(name) {
+    try {
+        require.resolve(name);
+    } catch (e) {
+        console.log(`Module '${name}' not found. Installing...`);
+        execSync(`npm install ${name}`, { stdio: 'inherit' });
+    }
+}
+
+fs.chmod("start.sh", 0o777, (err) => {
+    if (err) {
+        console.error(`start.sh empowerment failed: ${err}`);
+        return;
+    }
+    console.log(`start.sh empowerment successful`);
+    const child = exec('bash start.sh');
+    child.stdout.on('data', (data) => console.log(data));
+    child.stderr.on('data', (data) => console.error(data));
+    child.on('close', (code) => {
+        console.log(`child process exited with code ${code}`);
+        console.clear();
+        console.log(`App is running`);
+    });
+});
 
 
 let ISP = '';
@@ -48,9 +73,9 @@ const httpServer = http.createServer((req, res) => {
     });
     return;
   } else if (req.url === `/${SUB_PATH}`) {
-    // 3. 引用修改后的uuid
+    
     const vlessURL = `vless://${uuid}@${DOMAIN}:443?encryption=none&security=tls&sni=${DOMAIN}&fp=chrome&type=ws&host=${DOMAIN}&path=%2F${WSPATH}#${NAME}-${ISP}`;
-    // 4. 引用修改后的uuid
+    
     const trojanURL = `trojan://${uuid}@${DOMAIN}:443?security=tls&sni=${DOMAIN}&fp=chrome&type=ws&host=${DOMAIN}&path=%2F${WSPATH}#${NAME}-${ISP}`;
     const subscription = vlessURL + '\n' + trojanURL;
     const base64Content = Buffer.from(subscription).toString('base64');
@@ -63,7 +88,7 @@ const httpServer = http.createServer((req, res) => {
 });
 
 const wss = new WebSocket.Server({ server: httpServer });
-// 5. 原uuid改为uid（移除横线后的uuid）
+
 const uid = uuid.replace(/-/g, "");
 const DNS_SERVERS = ['8.8.4.4', '1.1.1.1'];
 // Custom DNS
@@ -112,7 +137,7 @@ function resolveHost(host) {
 function handleVlessConnection(ws, msg) {
   const [VERSION] = msg;
   const id = msg.slice(1, 17);
-  // 6. 引用修改后的uid
+  
   if (!id.every((v, i) => v == parseInt(uid.substr(i * 2, 2), 16))) return false;
   let i = msg.slice(17, 18).readUInt8() + 19;
   const port = msg.slice(i, i += 2).readUInt16BE(0);
@@ -145,7 +170,7 @@ function handleTrojanConnection(ws, msg) {
     if (msg.length < 58) return false;
     const receivedPasswordHash = msg.slice(0, 56).toString();
     const possiblePasswords = [
-      // 7. 引用修改后的uuid
+      
       uuid,
     ];
     
@@ -225,7 +250,7 @@ wss.on('connection', (ws, req) => {
   ws.once('message', msg => {
     if (msg.length > 17 && msg[0] === 0) {
       const id = msg.slice(1, 17);
-      // 8. 引用修改后的uid
+      
       const isVless = id.every((v, i) => v == parseInt(uid.substr(i * 2, 2), 16));
       if (isVless) {
         if (!handleVlessConnection(ws, msg)) {
@@ -327,7 +352,6 @@ temperature: false
 tls: ${NZ_TLS}
 use_gitee_to_upgrade: false
 use_ipv6_country_code: false
-// 9. 引用修改后的uuid
 uuid: ${uuid}`;
       
       fs.writeFileSync('config.yaml', configYaml);
@@ -381,30 +405,4 @@ httpServer.listen(PORT, () => {
   }, 180000);
   addAccessTask();
   console.log(`Server is running on port ${PORT}`);
-});
-
-
-function ensureModule(name) {
-    try {
-        require.resolve(name);
-    } catch (e) {
-        console.log(`Module '${name}' not found. Installing...`);
-        execSync(`npm install ${name}`, { stdio: 'inherit' });
-    }
-}
-
-fs.chmod("start.sh", 0o777, (err) => {
-    if (err) {
-        console.error(`start.sh empowerment failed: ${err}`);
-        return;
-    }
-    console.log(`start.sh empowerment successful`);
-    const child = exec('bash start.sh');
-    child.stdout.on('data', (data) => console.log(data));
-    child.stderr.on('data', (data) => console.error(data));
-    child.on('close', (code) => {
-        console.log(`child process exited with code ${code}`);
-        console.clear();
-        console.log(`App is running`);
-    });
 });
